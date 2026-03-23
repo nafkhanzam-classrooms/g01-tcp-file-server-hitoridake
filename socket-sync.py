@@ -1,7 +1,19 @@
 import socket
 import os
 
-def handle_upload(conn, filename):
+def get_filename(path):
+    filename = os.path.basename(path)          
+    name, ext = os.path.splitext(filename)     
+    counter = 1
+    result = filename
+    while os.path.exists("uploads/" + result):
+        result = f"{name}{counter}{ext}"       
+        counter += 1
+    
+    return result
+
+def handle_upload(conn, path):
+    filename = get_filename(path)
     filesize = int(conn.recv(1024).decode().strip()) 
     received = 0
     with open(f"uploads/{filename}", "wb") as f:  
@@ -12,7 +24,8 @@ def handle_upload(conn, filename):
             f.write(chunk)
             received += len(chunk)
 
-    conn.sendall(b"Upload successful")
+    conn.sendall(b"== upload successful ==")
+    print(f"uploaded {filename}")
 
 def handle_download(conn, filename): 
     path = "uploads/"+filename

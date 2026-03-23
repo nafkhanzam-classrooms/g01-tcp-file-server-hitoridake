@@ -2,13 +2,9 @@ import socket
 import os
 
 def upload_file(s, filename):
-    path = input("file path: ")
-    if not os.path.exists(path):
-        print("-- upload failed: the specified file doesn't exist --")
-        return
-    filesize = os.path.getsize(path)
+    filesize = os.path.getsize(filename)
     s.sendall(str(filesize).encode())
-    with open(path, "rb") as f:  
+    with open(filename, "rb") as f:  
         data = f.read(4096)
         if not data:
             return
@@ -60,6 +56,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             print(" ================ ")
         elif command == "/upload": 
             s.sendall((buffer).encode())
+            if not os.path.exists(filename):
+                print("-- upload failed: the specified file doesn't exist --")
+                continue
             upload_file(s, filename)
         elif command == "/download":
             s.sendall((buffer).encode())
