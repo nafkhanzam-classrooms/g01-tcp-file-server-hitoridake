@@ -1,5 +1,15 @@
-import socket
-import os
+import socket, os, threading
+
+clients = []
+lock = threading.Lock()
+
+def broadcast(message):
+    with lock:
+        for client in clients:
+            try:
+                client.sendall(message.encode())
+            except:
+                clients.remove(client)
 
 def get_filename(path):
     filename = os.path.basename(path)          
@@ -15,6 +25,7 @@ def get_filename(path):
 def handle_upload(conn, path):
     filename = get_filename(path)
     filesize = int(conn.recv(1024).decode().strip()) 
+    conn.sendall(b"ready") 
     received = 0
     with open(f"uploads/{filename}", "wb") as f:  
          while received < filesize:
@@ -45,19 +56,11 @@ def handle_download(conn, filename):
 
     print(f"file {filename} sent")
 
-HOST = "127.0.0.1"
-PORT = 65432
-
-server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server_sock.bind((HOST, PORT))
-server_sock.listen()
-
-while True:
-    conn, addr = server_sock.accept()
+def handle_client(conn, addr):
     while True:
         data = conn.recv(1024).decode().strip()
         if not data:
+            print(f"client disconnected: {addr[0]}:{addr[1]}")
             break
         if data == "/list":
             files = os.listdir("uploads")
@@ -70,5 +73,24 @@ while True:
             filename = data.split()[1]
             handle_download(conn, filename)
 
+    broadcast(f"goodbye {addr[0]}:{addr[1]}, we'll miss you!")
+    with lock:
+        clients.remove(conn)
     conn.close()
-    print(f"client disconnected: {addr}")
+
+
+HOST = "127.0.0.1"
+PORT = 65432
+
+server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_sock.bind((HOST, PORT))
+server_sock.listen(5)
+
+while True:
+    conn, addr = server_sock.accept()
+    with lock:
+        clients.append(conn)
+    print(f"connected to: {addr[0]}:{addr[1]}")
+    broadcast(f"new connected client! everyone say hi to {addr[0]}:{addr[1]}")
+    threading.Thread(target=handle_client, args=(conn,addr)).start()
