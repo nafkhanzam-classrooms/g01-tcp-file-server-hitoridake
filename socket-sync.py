@@ -1,4 +1,5 @@
 import socket
+import os
 
 def handle_upload(conn, filename):
     filesize = int(conn.recv(1024).decode().strip()) 
@@ -13,7 +14,24 @@ def handle_upload(conn, filename):
 
     conn.sendall(b"Upload successful")
 
-def handle_download(conn, filename): ...
+def handle_download(conn, filename): 
+    path = "uploads/"+filename
+    if not os.path.exists(path):
+        conn.sendall(f"404, 0".encode())
+        return
+    else: 
+        filesize = os.path.getsize(path)
+        conn.sendall(f"200, {filesize}".encode())
+    with open(path, "rb") as f:  
+        data = f.read(4096)
+        if not data:
+            return
+        while data:
+            conn.sendall(data)
+            data = f.read(4096)
+
+    print(f"file {filename} sent")
+
 def get_all_files(): ...
 
 HOST = "127.0.0.1"
@@ -38,8 +56,7 @@ while True:
             handle_upload(conn, filename)
         elif data.startswith("/download"):
             filename = data.split()[1]
-            # handle_download(conn, filename)
-            print(f"{filename}")
+            handle_download(conn, filename)
 
     conn.close()
     print(f"client disconnected: {addr}")
