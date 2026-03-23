@@ -32,8 +32,6 @@ def handle_download(conn, filename):
 
     print(f"file {filename} sent")
 
-def get_all_files(): ...
-
 HOST = "127.0.0.1"
 PORT = 65432
 
@@ -49,8 +47,9 @@ while True:
         if not data:
             break
         if data == "/list":
-            # get_all_files()
-            print("optained list")
+            files = os.listdir("uploads")
+            response = "\n".join(files)
+            conn.sendall(response.encode())
         elif data.startswith("/upload"):
             filename = data.split()[1]
             handle_upload(conn, filename)
