@@ -68,7 +68,7 @@ while True:
             poller.register(conn, select.POLLIN)         
             fd_map[conn.fileno()] = conn
             addr_map[conn.fileno()] = addr
-            broadcast(f"new client connected: {addr[0]}:{addr[1]}", fd_map)
+            broadcast(f"new client connected: {addr[0]}:{addr[1]}\n\n", fd_map)
         elif event & select.POLLIN:                       
             conn = fd_map[fd]
             addr = addr_map[fd]

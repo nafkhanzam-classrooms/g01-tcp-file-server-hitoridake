@@ -68,7 +68,7 @@ while True:
         if sock == server_sock:
             conn, addr = server_sock.accept()
             input_sockets.append(conn)
-            broadcast(f"new client connected: {addr[0]}:{addr[1]}\n", input_sockets)
+            broadcast(f"new client connected: {addr[0]}:{addr[1]}\n\n", input_sockets)
         else:
             data = sock.recv(1024).decode().strip()
             if not data:
