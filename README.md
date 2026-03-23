@@ -171,6 +171,66 @@ Berbeda dengan `server-sync`, `server-select` memanfaatkan `select` untuk melaku
 
 Selain itu, pendekatan select memungkinkan server untuk berkomunikasi dengan seluruh client secara langsung. Maka di sini saya menambahkan function `broadcast` untuk mengirim pesan kepada semua client dengan memanfaatkan list `input_sockets`
 
+### server-poll.py
+```python
+import socket, os, select
+def broadcast(message, conn_map):
+    for fd in list(conn_map.keys()):
+        try:
+            conn_map[fd].sendall(message.encode())
+        except:
+            del conn_map[fd]
+
+HOST = "127.0.0.1"
+PORT = 65432
+server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_sock.bind((HOST, PORT))
+server_sock.listen(5)
+
+poller = select.poll()                                    
+poller.register(server_sock, select.POLLIN)               
+
+fd_map = {}                                               
+fd_map[server_sock.fileno()] = server_sock
+addr_map = {}                                             
+
+while True:
+    events = poller.poll()                                
+    for fd, event in events:                             
+        if fd == server_sock.fileno():                  
+            conn, addr = server_sock.accept()
+            poller.register(conn, select.POLLIN)         
+            fd_map[conn.fileno()] = conn
+            addr_map[conn.fileno()] = addr
+            broadcast(f"new client connected: {addr[0]}:{addr[1]}", fd_map)
+        elif event & select.POLLIN:                       
+            conn = fd_map[fd]
+            addr = addr_map[fd]
+            data = conn.recv(1024).decode().strip()
+            if not data:                                  
+                broadcast(f"client disconnected: {addr[0]}:{addr[1]}", fd_map)
+                poller.unregister(conn)
+                del fd_map[fd]
+                del addr_map[fd]
+                conn.close()
+            else:
+                if data == "/list":
+                    files = os.listdir("uploads")
+                    conn.sendall("\n".join(files).encode())
+                elif data.startswith("/upload"):
+                    filename = data.split()[1]
+                    handle_upload(conn, filename)
+                elif data.startswith("/download"):
+                    filename = data.split()[1]
+                    handle_download(conn, filename)
+                
+```
+Polling bekerja dengan prinsip yang sama dengan select, yakni memonitor client mana yang telah mengirimkan pesan dan membutuhkan respon dari server. Perbedaannya terletak pada bagaimana poll melakukan monitoring tersebut. Alih-alih menerima socket object secara langsung, poll menggunakan file descriptor untuk membedakan antar socket sehingga diperlukan `fd_map` untuk melakukan mapping antara fd dengan socket object. Hal ini juga menjadikan implementasi fungsi broadcast memerlukan sedikit perubahan yaitu dengan melakukan iterasi pada fd_map.  Selain itu, poll menggunakan sistem flag seperti POLLIN untuk menentukan jenis event yang ingin dimonitor, sedangkan select menggunakan tiga list terpisah untuk read, write, dan error.
+
+### server-thread.py
+### client.py
+
 ## Screenshot Hasil
 
 ### server-sync.py
@@ -191,5 +251,8 @@ Setelah client pertama memutuskan koneksi, client kedua mendapat respon dari ser
 Berbeda dengan pendekatan synchronus, pada server-select dapat dilihat bahwa client kedua mendapatkan repon dari server meskipun client pertama masih terhubung. Selain itu, server juga dapat mengirimkan pesan broadcast kepada seluruh client yang terhubung sekaligus. 
 
 ### server-poll.py
-
+<br>
+<img width="1364" height="515" alt="image" src="https://github.com/user-attachments/assets/e7b526aa-53f7-4463-ab8e-444d93f5fafc" />
+<br> <br>
+Sama seperti server-select, kedua client dapat ditangani secara langsung tanpa menunggu salah satu memutuskan koneksi.
 
