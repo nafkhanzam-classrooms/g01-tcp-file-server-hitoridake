@@ -1,16 +1,21 @@
 import socket, os, threading
 
+is_busy = threading.Event()
+
 def receive_message(s):
     while True:
         try:
+            if is_busy.is_set(): 
+                continue
             data = s.recv(4096).decode()
             if not data:
                 break
-            print(f"\n{data}") 
+            print(f"\n{data}")
         except:
             break
 
 def upload_file(s, filename):
+    is_busy.set() 
     filesize = os.path.getsize(filename)
     s.sendall(str(filesize).encode())
     s.recv(1024)
@@ -21,8 +26,10 @@ def upload_file(s, filename):
             data = f.read(4096)
     response = s.recv(1024).decode()
     print(response)
+    is_busy.clear()
 
 def download_file(s, filename):
+    is_busy.set()
     response = s.recv(1024).decode().strip()
     status, filesize = response.split(",")
     if status.strip() == "404":
@@ -39,6 +46,7 @@ def download_file(s, filename):
             f.write(chunk)
             received += len(chunk)
     print(f"== successfully downloaded {filename} ==")
+    is_busy.clear()
 
 HOST = '127.0.0.1'
 PORT = 65432
