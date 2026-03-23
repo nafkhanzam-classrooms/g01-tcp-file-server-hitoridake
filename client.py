@@ -36,6 +36,7 @@ def download_file(s, filename):
     if status.strip() == "404":
         print(f"-- download failed: {filename} doesnt exist --")
         return
+    s.sendall(b"ready")
     print(f"-- downloading {filename}... --")
     filesize = int(filesize)
     received = 0

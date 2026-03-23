@@ -32,18 +32,23 @@ def handle_upload(conn, path):
     conn.sendall(b"== upload successful ==")
     print(f"uploaded {filename}")
 
-def handle_download(conn, filename):
-    path = "uploads/" + filename
+def handle_download(conn, filename): 
+    path = "uploads/"+filename
     if not os.path.exists(path):
         conn.sendall(f"404, 0".encode())
         return
-    filesize = os.path.getsize(path)
-    conn.sendall(f"200, {filesize}".encode())
-    with open(path, "rb") as f:
+    else: 
+        filesize = os.path.getsize(path)
+        conn.sendall(f"200, {filesize}".encode())
+        conn.recv(1024)
+    with open(path, "rb") as f:  
         data = f.read(4096)
+        if not data:
+            return
         while data:
             conn.sendall(data)
             data = f.read(4096)
+
     print(f"file {filename} sent")
 
 HOST = "127.0.0.1"

@@ -46,6 +46,7 @@ def handle_download(conn, filename):
     else: 
         filesize = os.path.getsize(path)
         conn.sendall(f"200, {filesize}".encode())
+        conn.recv(1024)
     with open(path, "rb") as f:  
         data = f.read(4096)
         if not data:
@@ -92,5 +93,5 @@ while True:
     with lock:
         clients.append(conn)
     print(f"connected to: {addr[0]}:{addr[1]}")
-    broadcast(f"new connected client! everyone say hi to {addr[0]}:{addr[1]}")
+    broadcast(f"new connected client! everyone say hi to {addr[0]}:{addr[1]}\n\n")
     threading.Thread(target=handle_client, args=(conn,addr)).start()

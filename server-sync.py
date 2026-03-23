@@ -14,16 +14,15 @@ def get_filename(path):
 def handle_upload(conn, path):
     filename = get_filename(path)
     filesize = int(conn.recv(1024).decode().strip())
-    conn.sendall(b"ready") 
+    conn.sendall(b"ready")
     received = 0
-    with open(f"uploads/{filename}", "wb") as f:  
-         while received < filesize:
+    with open(f"uploads/{filename}", "wb") as f:
+        while received < filesize:
             chunk = conn.recv(4096)
             if not chunk:
                 break
             f.write(chunk)
             received += len(chunk)
-
     conn.sendall(b"== upload successful ==")
     print(f"uploaded {filename}")
 
@@ -35,6 +34,7 @@ def handle_download(conn, filename):
     else: 
         filesize = os.path.getsize(path)
         conn.sendall(f"200, {filesize}".encode())
+        conn.recv(1024)
     with open(path, "rb") as f:  
         data = f.read(4096)
         if not data:
@@ -42,8 +42,6 @@ def handle_download(conn, filename):
         while data:
             conn.sendall(data)
             data = f.read(4096)
-
-    print(f"file {filename} sent")
 
 HOST = "127.0.0.1"
 PORT = 65432
@@ -71,4 +69,4 @@ while True:
             handle_download(conn, filename)
 
     conn.close()
-    print(f"client disconnected: {addr}")
+    print(f"client disconnected: {addr}\n")
