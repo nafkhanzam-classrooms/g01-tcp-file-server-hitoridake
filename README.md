@@ -63,20 +63,21 @@ Pada keempat file server, saya menggunakan fungsi helper yang sama yaitu `handle
 
    ```python
    def handle_download(conn, filename): 
-    path = "uploads/"+filename
-    if not os.path.exists(path):
-        conn.sendall(f"404, 0".encode())
-        return
-    else: 
-        filesize = os.path.getsize(path)
-        conn.sendall(f"200, {filesize}".encode())
-    with open(path, "rb") as f:  
-        data = f.read(4096)
-        if not data:
-            return
-        while data:
-            conn.sendall(data)
-            data = f.read(4096)
+       path = "uploads/"+filename
+       if not os.path.exists(path):
+           conn.sendall(f"404, 0".encode())
+           return
+       else: 
+           filesize = os.path.getsize(path)
+           conn.sendall(f"200, {filesize}".encode())
+           conn.recv(1024)
+       with open(path, "rb") as f:  
+           data = f.read(4096)
+           if not data:
+               return
+           while data:
+               conn.sendall(data)
+               data = f.read(4096)
 
     print(f"file {filename} sent")
    ```
@@ -229,8 +230,165 @@ while True:
 Polling bekerja dengan prinsip yang sama dengan select, yakni memonitor client mana yang telah mengirimkan pesan dan membutuhkan respon dari server. Perbedaannya terletak pada bagaimana poll melakukan monitoring tersebut. Alih-alih menerima socket object secara langsung, poll menggunakan file descriptor untuk membedakan antar socket sehingga diperlukan `fd_map` untuk melakukan mapping antara fd dengan socket object. Hal ini juga menjadikan implementasi fungsi broadcast memerlukan sedikit perubahan yaitu dengan melakukan iterasi pada fd_map.  Selain itu, poll menggunakan sistem flag seperti POLLIN untuk menentukan jenis event yang ingin dimonitor, sedangkan select menggunakan tiga list terpisah untuk read, write, dan error.
 
 ### server-thread.py
-### client.py
+```python
+import socket, os, threading
 
+clients = []
+lock = threading.Lock()
+
+def broadcast(message):
+    with lock:
+        for client in clients:
+            try:
+                client.sendall(message.encode())
+            except:
+                clients.remove(client)
+
+def handle_client(conn, addr):
+    while True:
+        data = conn.recv(1024).decode().strip()
+        if not data:
+            print(f"client disconnected: {addr[0]}:{addr[1]}")
+            break
+        if data == "/list":
+            files = os.listdir("uploads")
+            response = "\n".join(files)
+            conn.sendall(response.encode())
+        elif data.startswith("/upload"):
+            filename = data.split()[1]
+            handle_upload(conn, filename)
+        elif data.startswith("/download"):
+            filename = data.split()[1]
+            handle_download(conn, filename)
+
+    broadcast(f"goodbye {addr[0]}:{addr[1]}, we'll miss you!")
+    with lock:
+        clients.remove(conn)
+    conn.close()
+
+
+HOST = "127.0.0.1"
+PORT = 65432
+
+server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_sock.bind((HOST, PORT))
+server_sock.listen(5)
+
+while True:
+    conn, addr = server_sock.accept()
+    with lock:
+        clients.append(conn)
+    print(f"connected to: {addr[0]}:{addr[1]}")
+    broadcast(f"new connected client! everyone say hi to {addr[0]}:{addr[1]}")
+    threading.Thread(target=handle_client, args=(conn,addr)).start()
+
+```
+Berbeda dengan `server-sync`, `server-thread` memanfaatkan modul `threading` untuk melayani beberapa client secara bersamaan. Setiap kali ada client baru yang terhubung, server akan membuat thread baru yang menjalankan fungsi `handle_client` untuk melayani client tersebut. Dengan begitu, server dapat melayani banyak client secara paralel tanpa harus menunggu client sebelumnya memutuskan koneksi.
+
+Untuk mengelola daftar client yang terhubung, program menggunakan list `clients` yang diakses bersama oleh semua thread. Karena list ini diakses secara bersamaan oleh banyak thread, digunakan `threading.Lock()`untuk memastikan hanya satu thread yang dapat memodifikasi list tersebut pada satu waktu, sehingga menghindari race condition.
+Selain itu, fungsi broadcast digunakan untuk mengirim pesan kepada semua client yang terhubung. Fungsi ini juga menggunakan lock yang sama untuk memastikan keamanan saat mengiterasi list clients
+
+### client.py
+```python
+import socket, os, threading
+
+listener_active = threading.Event()
+listener_active.set() 
+
+def receive_message(s):
+    while True:
+        try:
+            if listener_active.wait(): 
+                continue
+            data = s.recv(4096).decode()
+            if not data:
+                break
+            print(f"\n{data}")
+        except:
+            break
+
+def upload_file(s, filename):
+    listener_active.clear()
+    filesize = os.path.getsize(filename)
+    s.sendall(str(filesize).encode())
+    s.recv(1024)
+    with open(filename, "rb") as f:
+        data = f.read(4096)
+        while data:
+            s.sendall(data)
+            data = f.read(4096)
+    response = s.recv(1024).decode()
+    print(response)
+    listener_active.set()
+
+def download_file(s, filename):
+    listener_active.clear()
+    response = s.recv(1024).decode().strip()
+    status, filesize = response.split(",")
+    if status.strip() == "404":
+        print(f"-- download failed: {filename} doesnt exist --")
+        return
+    s.sendall(b"ready")
+    print(f"-- downloading {filename}... --")
+    filesize = int(filesize)
+    received = 0
+    with open(filename, "wb") as f:
+        while received < filesize:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            f.write(chunk)
+            received += len(chunk)
+    print(f"== successfully downloaded {filename} ==")
+    listener_active.set()
+
+HOST = '127.0.0.1'
+PORT = 65432
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.connect((HOST, PORT))
+    print("== connection established ==")
+    threading.Thread(target=receive_message, args=(s,), daemon=True).start()
+    
+    while True:
+        buffer = input("command: ")
+        part = buffer.split()
+        command = part[0]
+        filename = part[1] if len(part) > 1 else None
+
+        if command == "-h":
+            print("/list -- show list of available files")
+            print("/upload <filename> -- upload a file")
+            print("/download <filename> -- download a file")
+            print("/exit -- disconnect")
+        elif command == "/upload":
+            s.sendall(buffer.encode())
+            if not os.path.exists(filename):
+                print("-- file doesn't exist --")
+                continue
+            upload_file(s, filename)
+        elif command == "/download":
+            s.sendall(buffer.encode())
+            download_file(s, filename)
+        elif command == "/list":
+            s.sendall(command.encode())
+            response = s.recv(4096).decode()
+            print(response)
+        elif command == "/exit":
+            break
+```
+1. `receive_message()` <br>
+   Digunakan untuk menerima pesan yang tidak berkaitan dengan command `/upload`, `/download`, maupun `/list`. Fungsi ini dijalankan menggunakan thread dan memanfaatkan Event berupa `listener_active()` untuk memastikan tidak terjadi race condition. Saat client melakukan proses upload maupun download, `listener_active()` akan dinonaktifkan sehingga fungsi receive_message() diblock sementara. <br>
+   
+2. `download`, `upload`, dan `list` <br>
+   Fungsi `download_file()` dan `upload_file()` digunakan untuk menangani proses upload dan download, dengan prinsip kerja yang sama dengan `handle_download()` dan `handle_upload()` pada file server. Ketika client mengirimkan perintah `/upload <file>`, client akan mengirimkan pesan tersebut kepada server. Server kemudian akan bersiap menerima ukuran file yang akan dikirim. `upload_file()` pada client mengirim ukuran file, menunggu respon dari server, kemudian membuka file dan mengirimkan byte file ke server.
+   
+   Sedangkan pada proses download, setelah client mengirimkan `/download <file>` pada server, client akan menunggu respon apakah file yang diminta valid atau tidak. Setelah itu client akan mulai menerima byte file pada server.
+   
+   Sementar itu, saat client mengirimkan `/list`, client akan menunggu respon dari server dan menampilkannya. 
+
+     
 ## Screenshot Hasil
 
 ### server-sync.py
@@ -255,4 +413,8 @@ Berbeda dengan pendekatan synchronus, pada server-select dapat dilihat bahwa cli
 <img width="1364" height="515" alt="image" src="https://github.com/user-attachments/assets/e7b526aa-53f7-4463-ab8e-444d93f5fafc" />
 <br> <br>
 Sama seperti server-select, kedua client dapat ditangani secara langsung tanpa menunggu salah satu memutuskan koneksi.
+
+### server-thread.py
+<br>
+<img width="1584" height="390" alt="image" src="https://github.com/user-attachments/assets/4937a7c0-9e6e-4ca7-90a1-0c9b7588dfe2" />
 
