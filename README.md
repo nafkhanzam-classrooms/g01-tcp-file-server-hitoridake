@@ -4,8 +4,7 @@
 ## Anggota Kelompok
 | Nama           | NRP        | Kelas     |
 | ---            | ---        | ----------|
-| Riyan Fadli Amazzadin               |     5025241068       |           |
-|                |            |           |
+| Riyan Fadli Amazzadin               |     5025241068       |    D       |
 
 ## Link Youtube (Unlisted)
 Link ditaruh di bawah ini
