@@ -119,17 +119,77 @@ Proses utama server dijalankan pada nester while loop. While loop yang paling lu
 
 Karena server bekerja secara synchronus, maka dalam 1 waktu server hanya bisa melayani 1 client. Client lain dalam antrian akan dilayani ketika client sebelumnya memutuskan koneksi dengan server. 
 
+### server-select.py
+
+```python 
+import socket, os, select
+
+def broadcast(message, input_sockets):
+    for conn in input_sockets[:]:
+        if conn != server_sock:
+            try:
+                conn.sendall(message.encode())
+            except:
+                input_sockets.remove(conn)
+
+HOST = "127.0.0.1"
+PORT = 65432
+
+server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_sock.bind((HOST, PORT))
+server_sock.listen(5)
+input_sockets = [server_sock]
+
+while True:
+    read_ready, _, _ = select.select(input_sockets, [], [])
+    for sock in read_ready:
+        if sock == server_sock:
+            conn, addr = server_sock.accept()
+            input_sockets.append(conn)
+            broadcast(f"new client connected: {addr[0]}:{addr[1]}\n", input_sockets)
+        else:
+            data = sock.recv(1024).decode().strip()
+            if not data:
+                print(f"client disconnected: {addr[0]}:{addr[1]}")
+                input_sockets.remove(sock)
+                sock.close()
+            else:
+                if data == "/list":
+                    files = os.listdir("uploads")
+                    sock.sendall("\n".join(files).encode())
+                elif data.startswith("/upload"):
+                    filename = data.split()[1]
+                    handle_upload(sock, filename)
+                elif data.startswith("/download"):
+                    filename = data.split()[1]
+                    handle_download(sock, filename)
+                
+
+```
+Berbeda dengan `server-sync`, `server-select` memanfaatkan `select` untuk melakukan monitoring terhadap semua client yang terhubung dan melayani client yang telah mengirimkan pesan. Untuk melakukan ini, program menggunakan `read_ready` yang diperoleh dari fungsi `select.select` dengan list semua socket sebagai parameter. Jika socket client terdapat pada read_ready, hal ini mengindikasikan bahwa client telah mengirimkan pesan yang dapat dibaca oleh server. Karena itu server akan dengan segera menghandle permintaan dari client tersebut. 
+
+Selain itu, pendekatan select memungkinkan server untuk berkomunikasi dengan seluruh client secara langsung. Maka di sini saya menambahkan function `broadcast` untuk mengirim pesan kepada semua client dengan memanfaatkan list `input_sockets`
+
 ## Screenshot Hasil
 
 ### server-sync.py
 <br>
 <img width="1285" height="569" alt="image" src="https://github.com/user-attachments/assets/da8de58a-091f-49c3-b7d9-2410e896fe04" />
-<br>
+<br> <br>
 
 Karena server bersifat synchronus, dapat dilihat bahwa client kedua (sebelah kanan) tidak mendapatkan response dari perintah `/list` karena server masih melayani client pertama. 
-<br>
+<br> <br>
 <img width="1293" height="567" alt="image" src="https://github.com/user-attachments/assets/3a03b302-0472-4007-8abe-dc7a74c77d99" />
-<br>
+<br> <br>
 Setelah client pertama memutuskan koneksi, client kedua mendapat respon dari server
+
+### server-select.py
+<br> 
+<img width="1287" height="470" alt="image" src="https://github.com/user-attachments/assets/1e0170ea-5ff0-4443-9fd4-06c2adfc5a01" />
+<br> <br>
+Berbeda dengan pendekatan synchronus, pada server-select dapat dilihat bahwa client kedua mendapatkan repon dari server meskipun client pertama masih terhubung. Selain itu, server juga dapat mengirimkan pesan broadcast kepada seluruh client yang terhubung sekaligus. 
+
+### server-poll.py
 
 
